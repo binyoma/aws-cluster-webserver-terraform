@@ -2,18 +2,19 @@ provider "aws" {
   access_key                  = "test"
   secret_key                  = "test"
   region                      = "us-east-1"
-  s3_use_path_style           = false
+  s3_use_path_style           = true
   skip_credentials_validation = true
   skip_metadata_api_check     = true
   skip_requesting_account_id  = true
 
   endpoints {
-    autoscaling = "http://localhost:4566"
-    ec2         = "http://localhost:4566"
-    elb         = "http://localhost:4566"
-    elbv2       = "http://localhost:4566"
-    s3          = "http://s3.localhost.localstack.cloud:4566"
-
+    s3             = "http://s3.localhost.localstack.cloud:4566"
+    dynamodb       = "http://localhost:4566"
+    rds            = "http://localhost:4566"
+    autoscaling    = "http://localhost:4566"
+    ec2            = "http://localhost:4566"
+    elb            = "http://localhost:4566"
+    elbv2          = "http://localhost:4566"
   }
 }
 resource "aws_vpc" "main" {
@@ -37,15 +38,11 @@ resource "aws_launch_template" "example" {
   image_id               = "ami-0fb653ca2d3203ac1"
   instance_type          = "t2.micro"
 
-  user_data = base64encode(<<-EOF
-              #!/bin/bash
-              yum update -y
-              yum install -y httpd php
-              systemctl start httpd
-              systemctl enable httpd
-              echo "<?php echo 'Hello World!'; ?>" > /var/www/html/index.php
-              EOF
-  )
+  user_data = templatefile("user-data.sh",{
+    server_port =var.server_port
+    db_address  =data.terraform_remote_state.db.outputs.address
+    db_port     =data.terraform_remote_state.db.outputs.port
+  } )
 }
 resource "aws_security_group" "instance" {
   name = "terraform-example-instance"
@@ -157,5 +154,32 @@ terraform {
     region = "us-east-1"
     dynamodb_table = "terraform_locks"
     encrypt = true
+
+    endpoints                   = {
+      s3 = "http://s3.localhost.localstack.cloud:4566"
+    }
+    skip_credentials_validation = true
+    skip_metadata_api_check     = true
+    force_path_style            = true
+    access_key                  = "test"
+    secret_key                  = "test"
+  }
+}
+data "terraform_remote_state" "db" {
+  backend = "s3"
+
+  config = {
+    bucket = "terraform"
+    key    ="stage/data-stores/mysql/terraform.tfstate"
+    region ="us-east-1"
+    endpoints                   = {
+      s3 = "http://s3.localhost.localstack.cloud:4566"
+    }
+    force_path_style            = true
+    skip_credentials_validation = true
+    skip_metadata_api_check     = true
+    skip_requesting_account_id  = true
+    access_key                  = "test"
+    secret_key                  = "test"
   }
 }
